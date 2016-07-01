@@ -19,6 +19,8 @@
 - (void)viewWillDisappear:(BOOL)animated{
     [super viewWillDisappear:animated];
 //    NSLog(@"%@:结束",NSStringFromClass([self class]));
+    
+    
 }
 
 

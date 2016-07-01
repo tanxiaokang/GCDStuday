@@ -8,20 +8,20 @@
 
 #import "plistTools.h"
 #import <UIKit/UIKit.h>
-
+#import <Foundation/Foundation.h>
 static BOOL isRequest; // 默认是0 .记录是不是正在上传数据.(挂起列队用)
-
+static BOOL isOpenSuspend;
 @implementation plistTools
 
 
-//返回一个并行队列,阻塞线程使用
+//返回一个并行队列,挂起列队使用
 + (dispatch_queue_t )Dispatch_queue_t_q2{
     
     static dispatch_queue_t q2;
     if (!q2) {
         //串行队列  DISPATCH_QUEUE_SERIAL
         //并行队列  DISPATCH_QUEUE_CONCURRENT
-        q2 = dispatch_queue_create("com.GNHLog.www", DISPATCH_QUEUE_CONCURRENT);
+        q2 = dispatch_queue_create("com.GNHLog.www", DISPATCH_QUEUE_SERIAL);
     }
     return q2;
 }
@@ -52,21 +52,27 @@ static BOOL isRequest; // 默认是0 .记录是不是正在上传数据.(挂起�
     }
 }
 
-//写入数据
+//写入plist方法
 + (void)writePlist:(NSString *)className{
     
-    //获取全局并发队列
-    dispatch_queue_t logQueue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0);
-
+    //获取并行队列
+    dispatch_queue_t logQueue = [self Dispatch_queue_t_q2];
+    
+    if (isRequest && !isOpenSuspend) {
+        NSLog(@"挂起列队:开启");
+        isOpenSuspend = YES;
+        dispatch_suspend(logQueue);
+    }
+    NSString *visitTime = [plistTools createTimeNew];
     dispatch_async(logQueue, ^{
         
-        [self writePlistWithClassName:className];
+        [self writePlistWithClassName:className VisitTime:visitTime];
     });
 }
-
-+ (void)writePlistWithClassName:(NSString *)className{
+//写入plist过程
++ (void)writePlistWithClassName:(NSString *)className VisitTime:(NSString *)visitTime{
     NSString *pageCode = className;
-    NSString *visitTime = [plistTools createTimeNew];
+    
     NSString *fileName = [plistTools standardPlist];
 
     NSDictionary *dic = @{@"visitTime": !visitTime ? @"0" : visitTime,
@@ -78,15 +84,25 @@ static BOOL isRequest; // 默认是0 .记录是不是正在上传数据.(挂起�
     [mArray addObject:dic];
     BOOL isWrite = [mArray writeToFile:fileName atomically:YES];
     
-    NSLog(@"写入:%@\n%@\n统计到的页面个数:%lu\n",isWrite == YES ? @"成功" : @"失败",fileName,(unsigned long)[mArray count]);
+    NSLog(@"写入:%@\n%@\n统计到的页面个数:%lu\n时间:%@:\n",isWrite == YES ? @"成功" : @"失败",fileName,(unsigned long)[mArray count],visitTime);
   
     NSLog(@"%d",isRequest);
     
 }
 + (void)Request{
-    
+   
+    isRequest = YES;
+    NSLog(@"模拟网络请求:开始请求 ps:时间为10S");
+    [NSTimer scheduledTimerWithTimeInterval:10 target:self selector:@selector(runs) userInfo:nil repeats:NO];
 }
-
++ (void)runs{
+    dispatch_queue_t logQueue = [self Dispatch_queue_t_q2];
+    dispatch_resume(logQueue);
+    isRequest = NO;
+    isOpenSuspend = NO;
+    NSLog(@"模拟网络请求:请求结束");
+    NSLog(@"挂起列队:关闭");
+}
 //时间相关
 + (NSString *)createTimeNew{
     
@@ -154,10 +170,7 @@ static BOOL isRequest; // 默认是0 .记录是不是正在上传数据.(挂起�
     DISPATCH_QUEUE_CONCURRENT表示该队列是并发队列。
  */
 
-/*
- 
- 
- 
+/*  用次方法在存储到plist时,lat存不进去.未弄清楚原因
  
          NSDictionary *dict = [NSDictionary dictionaryWithObjectsAndKeys:
                                visitTime==nil ? @"0" : visitTime,@"visitTime",
